@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "*.tcc": "cpp",
+        "vector": "cpp",
+        "random": "c",
+        "list": "c",
+        "math_service.h": "c",
+        "unistd.h": "c"
+    }
+}
