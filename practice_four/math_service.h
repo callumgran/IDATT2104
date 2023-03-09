@@ -6,7 +6,7 @@
 #endif
 
 #define PORT 8333
-#define IP "127.0.0.1"
+#define IP "10.24.2.29"
 #define MSG_MAX 64
 
 enum arithmetic_op {

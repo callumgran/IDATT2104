@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Web Server</title>
+	</head>
+	<body>
+        <h1>Index Page</h1>
+	</body>	
+	<script>
+        let ws = new WebSocket("ws://localhost:8090")
+        ws.onerror = async (event) => {
+          console.log(event.key)
+        }
+        
+        ws.onmessage = event => alert("Message from server: " + event.data)
+
+        ws.onopen = async () => { 
+            console.log("berachad");
+            alert("berachad")
+            ws.send("Halla")
+        }
+
+        ws.addEventListener('open', async (event) => {
+            console.log("open")
+            ws.send('Hello Server!')
+        })
+    </script>
+</html>

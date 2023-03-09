@@ -5,6 +5,12 @@
         "random": "c",
         "list": "c",
         "math_service.h": "c",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "stdbool.h": "c",
+        "fileio.h": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c",
+        "sha.h": "c"
     }
 }
