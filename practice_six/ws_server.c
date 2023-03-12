@@ -106,7 +106,7 @@ int readline(char* buffer, int level, char* linebuf)
     return -1;
 }
 
-int handshake(int cli_fd)
+int handshake(int socket)
 {
     int level = 0;
     char buffer[4096];
@@ -116,7 +116,7 @@ int handshake(int cli_fd)
     unsigned char sha1_digest[SHA_DIGEST_LENGTH+1] = {0};
     char response_header[1024] = {0};
 
-    if (recv(cli_fd,buffer,sizeof(buffer), 0) <= 0)
+    if (recv(socket, buffer, sizeof(buffer), 0) <= 0)
         return -1;
 
     LOG("Request: %s", buffer);
@@ -139,7 +139,7 @@ int handshake(int cli_fd)
             LOG("Response: ");
             LOG("%s",response_header);
 
-            if (send(cli_fd,response_header,strlen(response_header), 0) < 0)
+            if (send(socket, response_header, strlen(response_header), 0) < 0)
                 return -1;
             
             break;
