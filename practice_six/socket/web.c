@@ -6,7 +6,7 @@
 
 #include "web.h"
 
-void init_http_server(struct http_server_t *server, int port)
+void init_server(struct server_t *server, int port)
 {
     server->port = port;
     server->socket = socket(PF_INET, SOCK_STREAM, 0);

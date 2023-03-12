@@ -1,89 +1,34 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
+
+#include <openssl/bio.h>
+#include <openssl/pem.h>
+
 
 #include "base64.h"
 
-static char encoding_table[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-                                'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
-                                'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-                                'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
-                                'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-                                'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-                                'w', 'x', 'y', 'z', '0', '1', '2', '3',
-                                '4', '5', '6', '7', '8', '9', '+', '/'};
-static char *decoding_table = NULL;
-static int mod_table[] = {0, 2, 1};
-
-
-char *base64_encode(const unsigned char *data,
-                    size_t input_length,
-                    size_t *output_length) {
-
-    *output_length = 4 * ((input_length + 2) / 3);
-
-    char *encoded_data = malloc(*output_length);
-    if (encoded_data == NULL) return NULL;
-
-    for (int i = 0, j = 0; i < input_length;) {
-
-        uint32_t octet_a = i < input_length ? (unsigned char)data[i++] : 0;
-        uint32_t octet_b = i < input_length ? (unsigned char)data[i++] : 0;
-        uint32_t octet_c = i < input_length ? (unsigned char)data[i++] : 0;
-
-        uint32_t triple = (octet_a << 0x10) + (octet_b << 0x08) + octet_c;
-
-        encoded_data[j++] = encoding_table[(triple >> 3 * 6) & 0x3F];
-        encoded_data[j++] = encoding_table[(triple >> 2 * 6) & 0x3F];
-        encoded_data[j++] = encoding_table[(triple >> 1 * 6) & 0x3F];
-        encoded_data[j++] = encoding_table[(triple >> 0 * 6) & 0x3F];
-    }
-
-    for (int i = 0; i < mod_table[input_length % 3]; i++)
-        encoded_data[*output_length - 1 - i] = '=';
-
-    return encoded_data;
-}
-
-char *
-base64_encode2 (const void *buf, size_t size)
+int base64_encode(char *in_str, int in_len, char *out_str)
 {
-  static const char base64[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    BIO *b64, *bio;
+    BUF_MEM *bptr = NULL;
+    size_t size = 0;
 
-  char *str = (char *) malloc ((size + 3) * 4 / 3 + 1);
+    if (in_str == NULL || out_str == NULL)
+        return -1;
 
-  char *p = str;
-  const unsigned char *q = (const unsigned char *) buf;
-  size_t i = 0;
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new(BIO_s_mem());
+    bio = BIO_push(b64, bio);
 
-  while (i < size) {
-    int c = q[i++];
-    c *= 256;
-    if (i < size)
-      c += q[i];
-    i++;
+    BIO_write(bio, in_str, in_len);
+    BIO_flush(bio);
 
-    c *= 256;
-    if (i < size)
-      c += q[i];
-    i++;
+    BIO_get_mem_ptr(bio, &bptr);
+    memcpy(out_str, bptr->data, bptr->length);
+    out_str[bptr->length-1] = '\0';
+    size = bptr->length;
 
-    *p++ = base64[(c & 0x00fc0000) >> 18];
-    *p++ = base64[(c & 0x0003f000) >> 12];
-
-    if (i > size + 1)
-      *p++ = '=';
-    else
-      *p++ = base64[(c & 0x00000fc0) >> 6];
-
-    if (i > size)
-      *p++ = '=';
-    else
-      *p++ = base64[c & 0x0000003f];
-  }
-
-  *p = 0;
-
-  return str;
+    BIO_free_all(bio);
+    return size;
 }

@@ -3,28 +3,15 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include <sys/epoll.h>
 #include <string.h>
 #include <fcntl.h>
-#include <openssl/sha.h>
+#include <netinet/in.h>
 
 #include "common.h"
-#include "base64/base64.h"
 #include "fileio/fileio.h"
 #include "socket/web.h"
 #include "routing/routes.h"
 #include "threadpool/worker.h"
-
-#define GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-#define GUID_LEN strlen(GUID)
-#define WS_KEY_LEN 24
-#define WS_HEADER "HTTP/1.1 101 Switching Protocols\r\n"\
-                "Upgrade: websocket\r\n"\
-                "Connection: Upgrade\r\n"\
-                "Sec-WebSocket-Accept: "
-#define WS_HEADER_LEN strlen(WS_HEADER)
-
-#define PORT 8090
 
 struct thread_data_t {
     int connection;
@@ -36,59 +23,66 @@ void check_quit(void *arg)
 {
     void **args = (void **)arg;
     bool *running = (bool *)*(args);
-    int *socket = (int *)*(args + 1);
+    int *http_socket = (int *)*(args + 1);
 
     while (getc(stdin) != 'q');
 
-    close(*socket);
+    close(*http_socket);
     LOG("Quitting...\n");
     
     *running = false;
 }
 
-void ws_connect(char *header, int socket)
+int serve_file(struct routes_t *routes, int socket, char *buffer)
 {
-    unsigned char key[WS_KEY_LEN];
-
-    unsigned char *key_start = strstr(header, "Sec-WebSocket-Key: ") + strlen("Sec-WebSocket-Key: ");
     
-    strncpy(key, key_start, WS_KEY_LEN);
-    key[WS_KEY_LEN] = 0;
+    LOG("HTTP REQUEST");
+    LOG("Received: %s", buffer);
 
-    LOG("found Sec-WebSocket-Key: %s", key);
+    char *route = "";
+    char *method = "";
 
-    int fullkey_len = WS_KEY_LEN + GUID_LEN;
+    char *header = strtok(buffer, "\n");
 
-    unsigned char digest[SHA_DIGEST_LENGTH];
+    char *token = strtok(header, " ");
 
-    unsigned char key_concat[fullkey_len + 1];
+    int i = 0;
 
-    strcpy(key_concat, key);
+    while (token != NULL) {
+        if (i == 0) {
+            method = token;
+        } else if (i == 1) {
+            route = token;
+        }
 
-    strcat(key_concat, GUID);
-    SHA1((unsigned char *)key_concat, 60, digest);
-    LOG("computed SHA1: %s", digest);
-
-    size_t out = 0;
-    unsigned char *base64_digest = base64_encode2(digest, 20);
-
-    for (int i = 0; i < SHA_DIGEST_LENGTH; i++) {
-        printf("%02x", digest[i]);
+        token = strtok(NULL, " ");
+        i++;
     }
-    base64_digest[strlen(base64_digest) - 1] = 0;
 
+    char template[100] = "";
 
-    LOG("computed Sec-Websocket-Accept: %s", base64_digest);
+    if (strcmp(route, "/favicon.ico") == 0)
+        return -1;
 
-    int len = WS_HEADER_LEN + strlen(base64_digest);
-    unsigned char outgoing_header[len];
-    strcpy(outgoing_header, WS_HEADER);
-    strcat(outgoing_header, base64_digest);
-    strcat(outgoing_header, "=\r\n\r\n");
-    int bytes_sent = send(socket, outgoing_header, 129, MSG_NOSIGNAL);
+    struct route_t * destination = find_route(routes, route);
 
-    LOG("SENT: %s", outgoing_header);
+    strcat(template, "./html/");
 
+    if (destination == NULL)
+        strcat(template, "404.html");
+    else
+        strcat(template, destination->value);
+
+    FILE* file = fopen(template, "r");
+    struct file_data_t *fd = read_file(file);
+    fclose(file);
+
+    char http_header[4096] = "HTTP/1.1 200 OK\r\n\r\n";
+    strcat(http_header, fd->data);
+    strcat(http_header, "\r\n\r\n");
+    send(socket, http_header, sizeof(http_header), 0);
+    free(fd->data);
+    free(fd);
 }
 
 void http_listen(void *arg)
@@ -96,88 +90,37 @@ void http_listen(void *arg)
     struct thread_data_t *data = (struct thread_data_t *)arg;
 
     int client_socket = data->connection;
-
     struct routes_t *routes = data->routes;
-
-
     int bytes_recv = 1;
 
     while (bytes_recv > 0 && *(data->running)) {
-        char buffer[4096];
-
-        char ws_header[4096];
-
+        char buffer[4096] = {0};
         bytes_recv = recv(client_socket, buffer, 4096, 0);
-        LOG("Receiving %d bytes", bytes_recv);
-        LOG("Received: %s", buffer);
-
-        strncpy(ws_header, buffer, 1024);
-
-        char *route = "";
-        char *method = "";
-
-        char *header = strtok(buffer, "\n");
-
-        char *token = strtok(header, " ");
-
-        int i = 0;
-
-        while (token != NULL) {
-            if (i == 0) {
-                method = token;
-            } else if (i == 1) {
-                route = token;
-            }
-
-            token = strtok(NULL, " ");
-            i++;
-        }
-
-        char template[100] = "";
-
-        if (strcmp(route, "/favicon.ico") == 0)
-            break;
-        
-        struct route_t * destination = find_route(routes, route);
-
-        strcat(template, "./html/");
-
-        if (destination == NULL)
-            strcat(template, "404.html");
-        else
-            strcat(template, destination->value);
-
-        FILE* file = fopen(template, "r");
-        struct file_data_t *fd = read_file(file);
-        fclose(file);
-
-        if (strstr(ws_header, "Sec-WebSocket-Key") != NULL) {
-            LOG("WS UPGRADE START");
-            ws_connect(ws_header, client_socket);
-            LOG("WS UPGRADE FINISHED");
-        }
-
-        char http_header[4096] = "HTTP/1.1 200 OK\r\n\r\n";
-        strcat(http_header, fd->data);
-        strcat(http_header, "\r\n\r\n");
-        send(client_socket, http_header, sizeof(http_header), 0);
-        free(fd->data);
-        free(fd);
+        serve_file(routes, client_socket, buffer);
     }
 
     close(client_socket);
 
     free(arg);
 
-    LOG("remote closed connection: %d", client_socket);
+    LOG("Closed connection to: %d", client_socket);
+}
+
+void set_non_blocking(int socket)
+{
+    int flags = fcntl(socket, F_GETFL, 0);
+
+    flags |= O_NONBLOCK;
+
+    fcntl(socket, F_SETFL, flags);
 }
 
 int main()
 {
-    struct http_server_t server;
-    init_http_server(&server, PORT);
+    struct server_t http_server;
+    init_server(&http_server, HTTP_PORT);
 
-    int client_socket;
+    int client_http_socket = -1;
 
     struct routes_t routes;
     init_routes(&routes);
@@ -185,38 +128,35 @@ int main()
     insert_route(&routes, create_route("/", "index.html"));
     insert_route(&routes, create_route("/home", "index.html"));
 
-    struct worker_threads_t *workers = malloc_worker_threads(6, 10);
+    struct worker_threads_t *workers = malloc_worker_threads(10, 10);
 
     start_worker_threads(workers);
 
     bool running = true;
 
-    printf("Server started, press 'q' to quit\n");
+    LOG("Server started, press 'q' to quit\n");
 
-    submit_worker_task(workers, check_quit, (void *[]){&running, &server.socket});
+    submit_worker_task(workers, check_quit, (void *[]){&running, &http_server.socket});
 
-    int flags = fcntl(server.socket, F_GETFL, 0);
-
-    flags |= O_NONBLOCK;
-
-    fcntl(server.socket, F_SETFL, flags);
+    set_non_blocking(http_server.socket);
 
     while (running) {
 
-        client_socket = accept(server.socket, NULL, NULL);
+        client_http_socket = accept(http_server.socket, NULL, NULL);
 
-        if (client_socket != -1) {
-            LOG("Client connected %d \n", client_socket);
+        if (client_http_socket != -1) {
+            LOG("HTTP client connected %d \n", client_http_socket);
 
             struct thread_data_t *data = (struct thread_data_t *)malloc(sizeof(struct thread_data_t));
-            data->connection = client_socket;
+            data->connection = client_http_socket;
             data->routes = &routes;
             data->running = &running;
             submit_worker_task(workers, http_listen, data);
+            client_http_socket = -1;
         }
     }
 
-    LOG("Shutting down server");
+    LOG("Shutting down http_server.");
 
     free(routes.base);
     worker_threads_stop(workers);

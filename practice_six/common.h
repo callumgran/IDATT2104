@@ -1,6 +1,15 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+/* Structs */
+
+#define HTTP_PORT 8090
+#define WS_PORT 8091
+
 #define LOG(...) \
     do { \
         printf("\033[0;33m[LOG]: "); \

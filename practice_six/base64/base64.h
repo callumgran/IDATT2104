@@ -1,10 +1,13 @@
 #ifndef BASE64_H
 #define BASE64_H
 
-char *base64_encode(const unsigned char *data,
-                    size_t input_length,
-                    size_t *output_length);
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
 
-char *base64_encode2(const void *buf, size_t size);
+#include <openssl/bio.h>
+#include <openssl/pem.h>
+
+int base64_encode(char *in_str, int in_len, char *out_str);
 
 #endif
